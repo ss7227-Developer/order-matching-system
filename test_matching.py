@@ -284,6 +284,51 @@ def test_fifo_after_cancellation() -> None:
     assert trades[0].sell_order_id == "order-2"
 
 
+def test_self_trade_skip_in_middle_of_fifo() -> None:
+    # bob@50 (order-1), alice@50 own (order-2), carol@50 (order-3) — all same price, FIFO order
+    # alice buys 15@50: fills bob(5) + skips own + fills carol(5) = 10 traded, 5 rests as bid
+    eng = MatchingEngine()
+    eng.submit_order(_req(Side.SELL, 50, 5, 202))   # order-1: bob
+    eng.submit_order(_req(Side.SELL, 50, 5, 101))   # order-2: alice's own ask
+    eng.submit_order(_req(Side.SELL, 50, 5, 303))   # order-3: carol
+    trades = eng.submit_order(_req(Side.BUY, 50, 15))  # alice buys 15
+    assert len(trades) == 2
+    assert trades[0].sell_order_id == "order-1"  # bob filled first
+    assert trades[1].sell_order_id == "order-3"  # carol filled after skip
+    assert sum(t.quantity for t in trades) == 10
+    snap = eng.snapshot()
+    assert snap["asks"] == [{"price": 50, "quantity": 5}]  # order-2 untouched
+    assert snap["bids"] == [{"price": 50, "quantity": 5}]  # 5 remaining rests
+
+
+def test_price_zero_rejected() -> None:
+    try:
+        OrderRequest(side=Side.BUY, price=0, quantity=10, owner_id=101)
+        raise AssertionError("price=0 should have been rejected")
+    except Exception as e:
+        assert not isinstance(e, AssertionError), str(e)
+
+
+def test_quantity_zero_rejected() -> None:
+    try:
+        OrderRequest(side=Side.BUY, price=50, quantity=0, owner_id=101)
+        raise AssertionError("quantity=0 should have been rejected")
+    except Exception as e:
+        assert not isinstance(e, AssertionError), str(e)
+
+
+def test_cancelled_order_is_immutable() -> None:
+    eng = MatchingEngine()
+    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))
+    cancelled = eng.cancel_order("order-1", 101)
+    assert cancelled is not None
+    try:
+        cancelled.price = 99  # type: ignore[misc]
+        raise AssertionError("should have raised")
+    except Exception as e:
+        assert "frozen" in str(e).lower() or "immutable" in str(e).lower()
+
+
 if __name__ == "__main__":
     test_trade_is_immutable()
     test_prices_asks_ascending()
@@ -314,4 +359,8 @@ if __name__ == "__main__":
     test_partially_filled_resting_keeps_priority()
     test_better_price_beats_earlier_time()
     test_fifo_after_cancellation()
+    test_self_trade_skip_in_middle_of_fifo()
+    test_price_zero_rejected()
+    test_quantity_zero_rejected()
+    test_cancelled_order_is_immutable()
     print("all ok")
