@@ -1,3 +1,5 @@
+import threading
+
 from book import OrderBook
 from order import Order, OrderRequest, Side, Trade
 
@@ -6,21 +8,29 @@ class MatchingEngine:
     def __init__(self) -> None:
         self._next_seq = 0
         self._book = OrderBook()
+        # serializes submit/cancel/snapshot — prevents cancel-while-matching race
+        self._lock = threading.Lock()
 
     def submit_order(self, request: OrderRequest) -> list[Trade]:
-        order = self._create_order(request)
-        trades = self._match(order)
-        if order.remaining > 0:
-            self._book.add(order)
-        return trades
+        with self._lock:
+            order = self._create_order(request)
+            trades, expired = self._match(order)
+            if not expired and order.remaining > 0:
+                self._book.add(order)
+            return trades
 
-    def cancel_order(self, order_id: str) -> Order | None:
-        return self._book.cancel(order_id)
+    def cancel_order(self, order_id: str, owner: str) -> Order | None:
+        with self._lock:
+            order = self._book._index.get(order_id)
+            if order is None or order.owner != owner:
+                return None
+            return self._book.cancel(order_id)
 
     def snapshot(self) -> dict:
-        return self._book.snapshot()
+        with self._lock:
+            return self._book.snapshot()
 
-    def _match(self, incoming: Order) -> list[Trade]:
+    def _match(self, incoming: Order) -> tuple[list[Trade], bool]:
         trades: list[Trade] = []
         opposite = Side.SELL if incoming.side == Side.BUY else Side.BUY
 
@@ -35,7 +45,7 @@ class MatchingEngine:
                 if incoming.remaining == 0:
                     break
                 if resting.owner == incoming.owner:
-                    continue
+                    return trades, True  # self-trade: expire remainder, keep prior fills
                 filled = min(incoming.remaining, resting.remaining)
                 incoming.remaining -= filled
                 resting.remaining -= filled
@@ -50,7 +60,7 @@ class MatchingEngine:
                 if resting.remaining == 0:
                     self._book.remove(resting)
 
-        return trades
+        return trades, False
 
     def _create_order(self, request: OrderRequest) -> Order:
         self._next_seq += 1
