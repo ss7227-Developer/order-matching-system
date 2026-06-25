@@ -54,7 +54,7 @@ class MatchingEngine:
                 if incoming.remaining == 0:
                     break
                 if resting.owner_id == incoming.owner_id:
-                    return trades, True  # self-trade: expire remainder, keep prior fills
+                    continue  # skip the same owner and try the next person
                 filled = min(incoming.remaining, resting.remaining)
                 incoming.remaining -= filled
                 resting.remaining -= filled
