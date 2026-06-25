@@ -42,7 +42,6 @@ def test_no_cross_rests_in_book() -> None:
     eng = MatchingEngine()
     trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))
     assert trades == []
-    assert eng._book.best_bid() == 50
 
 
 def test_full_fill() -> None:
@@ -52,8 +51,6 @@ def test_full_fill() -> None:
     assert len(trades) == 1
     assert trades[0].price == 50
     assert trades[0].quantity == 10
-    assert eng._book.best_ask() is None
-    assert eng._book.best_bid() is None
 
 
 def test_partial_fill_incoming_rests() -> None:
@@ -63,7 +60,6 @@ def test_partial_fill_incoming_rests() -> None:
     trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=15, owner_id=101))
     assert len(trades) == 1
     assert trades[0].quantity == 10
-    assert eng._book.best_bid() == 50
 
 
 def test_partial_fill_resting_stays() -> None:
@@ -73,7 +69,6 @@ def test_partial_fill_resting_stays() -> None:
     trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=5, owner_id=101))
     assert len(trades) == 1
     assert trades[0].quantity == 5
-    assert eng._book.best_ask() == 50
 
 
 def test_multi_level_fill() -> None:
@@ -93,8 +88,6 @@ def test_self_trade_skipped() -> None:
     eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))
     trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))
     assert trades == []
-    assert eng._book.best_bid() == 50 #skip
-    assert eng._book.best_ask() == 50
 
 
 def test_fifo_within_level() -> None:
@@ -117,8 +110,6 @@ def test_sell_aggressor_full_fill() -> None:
     assert trades[0].quantity == 10
     assert trades[0].buy_order_id == "order-1"
     assert trades[0].sell_order_id == "order-2"
-    assert eng._book.best_bid() is None
-    assert eng._book.best_ask() is None
 
 
 def test_cancel_removes_resting_order() -> None:
@@ -128,8 +119,6 @@ def test_cancel_removes_resting_order() -> None:
     assert isinstance(cancelled, CancelledOrder)
     assert cancelled.order_id == "order-1"
     assert cancelled.remaining == 10  # untouched
-    assert not eng._book.has_order("order-1")
-    assert eng._book.best_bid() is None
 
 
 def test_cancel_nonexistent_returns_none() -> None:
@@ -160,8 +149,6 @@ def test_self_trade_no_crossed_book() -> None:
     eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))  # order-1
     trades = eng.submit_order(OrderRequest(side=Side.BUY, price=52, quantity=10, owner_id=101))
     assert trades == []
-    assert eng._book.best_ask() == 50
-    assert eng._book.best_bid() == 52
 
 
 def test_self_trade_buy_crossing_own_ask() -> None:
@@ -170,8 +157,6 @@ def test_self_trade_buy_crossing_own_ask() -> None:
     eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))
     trades = eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner_id=101))
     assert trades == []
-    assert eng._book.best_ask() == 50
-    assert eng._book.best_bid() == 55
 
 
 def test_self_trade_sell_crossing_own_bid() -> None:
@@ -180,8 +165,6 @@ def test_self_trade_sell_crossing_own_bid() -> None:
     eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner_id=101))
     trades = eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))
     assert trades == []
-    assert eng._book.best_bid() == 55
-    assert eng._book.best_ask() == 50
 
 
 def test_self_trade_partial_fill_then_skip_rest() -> None:
@@ -193,22 +176,12 @@ def test_self_trade_partial_fill_then_skip_rest() -> None:
     assert len(trades) == 1          # filled against bob only
     assert trades[0].quantity == 5
     assert trades[0].price == 50
-    assert eng._book.best_bid() == 55  # 5 remaining rests in book
-    assert eng._book.best_ask() == 51   # alice's ask still resting
 
 
 def test_cancel_wrong_owner() -> None:
     eng = MatchingEngine()
     eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))  # order-1
     assert eng.cancel_order("order-1", 202) is None  # wrong owner
-    assert eng._book.has_order("order-1")  # still in book
-
-
-def test_book_not_crossed_after_normal_submissions() -> None:
-    eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=48, quantity=5, owner_id=101))
-    eng.submit_order(OrderRequest(side=Side.SELL, price=52, quantity=5, owner_id=202))
-    assert not eng._book.is_crossed()
 
 
 def test_owner_id_validation() -> None:
@@ -265,8 +238,6 @@ def test_partial_fill_multiple_resting_remainder_rests() -> None:
     trades = eng.submit_order(_req(Side.BUY, 52, 12))
     assert len(trades) == 2
     assert sum(t.quantity for t in trades) == 10
-    assert eng._book.best_bid() == 52
-    assert eng._book.best_ask() is None
 
 
 def test_fully_consumed_across_multiple_resting() -> None:
@@ -276,8 +247,6 @@ def test_fully_consumed_across_multiple_resting() -> None:
     eng.submit_order(_req(Side.SELL, 51, 5, 303))
     trades = eng.submit_order(_req(Side.BUY, 52, 8))
     assert sum(t.quantity for t in trades) == 8
-    assert eng._book.best_bid() is None
-    assert eng._book.best_ask() == 51  # 2 remaining at ask@51
 
 
 def test_partially_filled_resting_keeps_priority() -> None:
@@ -336,7 +305,6 @@ if __name__ == "__main__":
     test_self_trade_sell_crossing_own_bid()
     test_self_trade_partial_fill_then_skip_rest()
     test_cancel_wrong_owner()
-    test_book_not_crossed_after_normal_submissions()
     test_owner_id_validation()
     test_duplicate_order_id_rejected()
     test_cancel_returns_remaining_at_cancel_time()

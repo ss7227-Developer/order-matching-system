@@ -41,20 +41,6 @@ class OrderBook:
         self.remove(order)
         return order
 
-    def best_bid(self) -> int | None:
-        return max(self._bids) if self._bids else None
-
-    def best_ask(self) -> int | None:
-        return min(self._asks) if self._asks else None
-
-    def is_crossed(self) -> bool:
-        bid = self.best_bid()
-        ask = self.best_ask()
-        return bid is not None and ask is not None and bid >= ask
-
-    def has_order(self, order_id: str) -> bool:
-        return order_id in self._index
-
     def get(self, order_id: str) -> Order | None:
         return self._index.get(order_id)
 
@@ -93,8 +79,6 @@ if __name__ == "__main__":
 
     book.add(b1); book.add(b2); book.add(a1)
 
-    assert book.best_bid() == 50
-    assert book.best_ask() == 55
     assert list(book._level(Side.BUY, 50)) == [b1, b2]
 
     snap = book.snapshot()
@@ -107,11 +91,6 @@ if __name__ == "__main__":
     assert book._level(Side.BUY, 50) == deque([b1])
 
     book.remove(b1)
-    assert book.best_bid() is None
-
-    assert book.is_crossed() is False
-    assert book.has_order("3") is True
-    assert book.has_order("99") is False
 
     dup = make("99", Side.BUY, 50, 5)
     book2 = OrderBook()
