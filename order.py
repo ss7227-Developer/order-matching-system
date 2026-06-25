@@ -15,7 +15,7 @@ class OrderRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
     side: Side
-    price: int = Field(ge=1, le=99)
+    price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
     owner: str
 
@@ -25,8 +25,8 @@ class Trade(BaseModel):
 
     buy_order_id: str
     sell_order_id: str
-    price: int
-    quantity: int
+    price: int = Field(ge=1)
+    quantity: int = Field(gt=0)
 
 
 class Order(BaseModel):
@@ -34,7 +34,7 @@ class Order(BaseModel):
 
     # Client-supplied — frozen after creation
     side: Side
-    price: int = Field(ge=1, le=99)
+    price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
     owner: str
 
@@ -43,7 +43,7 @@ class Order(BaseModel):
     sequence_number: int
 
     # The only field that changes after creation
-    remaining: int
+    remaining: int = Field(ge=0)
 
     # Note: runtime guard only — mypy won't catch order.price = 50 at type-check time
     _FROZEN: ClassVar[frozenset[str]] = frozenset(

@@ -63,8 +63,6 @@ class OrderBook:
 
 
 if __name__ == "__main__":
-    from order import Order, Side
-
     def make(order_id: str, side: Side, price: int, qty: int) -> Order:
         return Order.create(
             side=side, price=price, quantity=qty, owner="t",

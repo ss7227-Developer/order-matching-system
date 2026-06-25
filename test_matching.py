@@ -1,5 +1,3 @@
-from collections import deque
-
 from book import OrderBook
 from engine import MatchingEngine
 from order import Order, OrderRequest, Side, Trade
@@ -105,6 +103,20 @@ def test_fifo_within_level() -> None:
     assert trades[0].sell_order_id == "order-1"
 
 
+def test_sell_aggressor_full_fill() -> None:
+    # resting BUY@50, incoming SELL@50 → one trade, correct buy/sell ids
+    eng = MatchingEngine()
+    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))   # order-1
+    trades = eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))
+    assert len(trades) == 1
+    assert trades[0].price == 50
+    assert trades[0].quantity == 10
+    assert trades[0].buy_order_id == "order-1"
+    assert trades[0].sell_order_id == "order-2"
+    assert eng._book.best_bid() is None
+    assert eng._book.best_ask() is None
+
+
 if __name__ == "__main__":
     test_trade_is_immutable()
     test_prices_asks_ascending()
@@ -116,4 +128,5 @@ if __name__ == "__main__":
     test_multi_level_fill()
     test_self_trade_skipped()
     test_fifo_within_level()
+    test_sell_aggressor_full_fill()
     print("all ok")
