@@ -14,6 +14,12 @@ class MatchingEngine:
             self._book.add(order)
         return trades
 
+    def cancel_order(self, order_id: str) -> Order | None:
+        return self._book.cancel(order_id)
+
+    def snapshot(self) -> dict:
+        return self._book.snapshot()
+
     def _match(self, incoming: Order) -> list[Trade]:
         trades: list[Trade] = []
         opposite = Side.SELL if incoming.side == Side.BUY else Side.BUY
