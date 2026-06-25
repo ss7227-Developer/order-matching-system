@@ -9,8 +9,8 @@ class MatchingEngine:
 
     def submit_order(self, request: OrderRequest) -> list[Trade]:
         order = self._create_order(request)
-        trades, expired = self._match(order)
-        if not expired and order.remaining > 0:
+        trades = self._match(order)
+        if order.remaining > 0:
             self._book.add(order)
         return trades
 
@@ -32,7 +32,7 @@ class MatchingEngine:
     def snapshot(self) -> dict:
         return self._book.snapshot()
 
-    def _match(self, incoming: Order) -> tuple[list[Trade], bool]:
+    def _match(self, incoming: Order) -> list[Trade]:
         trades: list[Trade] = []
         opposite = Side.SELL if incoming.side == Side.BUY else Side.BUY
 
@@ -47,7 +47,7 @@ class MatchingEngine:
                 if incoming.remaining == 0:
                     break
                 if resting.owner_id == incoming.owner_id:
-                    continue  # skip the same owner and try the next person
+                    continue
                 filled = min(incoming.remaining, resting.remaining)
                 incoming.remaining -= filled
                 resting.remaining -= filled
@@ -62,7 +62,7 @@ class MatchingEngine:
                 if resting.remaining == 0:
                     self._book.remove(resting)
 
-        return trades, False
+        return trades
 
     def _create_order(self, request: OrderRequest) -> Order:
         self._next_seq += 1
