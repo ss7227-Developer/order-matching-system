@@ -17,7 +17,7 @@ class OrderRequest(BaseModel):
     side: Side
     price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
-    owner: str
+    owner_id: int
 
 
 class Trade(BaseModel):
@@ -29,6 +29,19 @@ class Trade(BaseModel):
     quantity: int = Field(gt=0)
 
 
+class CancelledOrder(BaseModel):
+    """Immutable snapshot returned by cancel_order — callers cannot mutate engine state."""
+    model_config = ConfigDict(frozen=True)
+
+    order_id: str
+    side: Side
+    price: int = Field(ge=1, le=99)
+    quantity: int = Field(gt=0)
+    remaining: int = Field(ge=0)
+    owner_id: int
+    sequence_number: int
+
+
 class Order(BaseModel):
     model_config = ConfigDict(frozen=False)
 
@@ -36,7 +49,7 @@ class Order(BaseModel):
     side: Side
     price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
-    owner: str
+    owner_id: int
 
     # Engine-assigned — frozen after creation
     order_id: str
@@ -47,7 +60,7 @@ class Order(BaseModel):
 
     # Note: runtime guard only — mypy won't catch order.price = 50 at type-check time
     _FROZEN: ClassVar[frozenset[str]] = frozenset(
-        {"side", "price", "quantity", "owner", "order_id", "sequence_number"}
+        {"side", "price", "quantity", "owner_id", "order_id", "sequence_number"}
     )
 
     def __setattr__(self, name: str, value: object) -> None:
@@ -67,7 +80,7 @@ class Order(BaseModel):
         side: Side,
         price: int,
         quantity: int,
-        owner: str,
+        owner_id: int,
         order_id: str,
         sequence_number: int,
     ) -> Order:
@@ -75,7 +88,7 @@ class Order(BaseModel):
             side=side,
             price=price,
             quantity=quantity,
-            owner=owner,
+            owner_id=owner_id,
             order_id=order_id,
             sequence_number=sequence_number,
             remaining=quantity,
@@ -84,13 +97,13 @@ class Order(BaseModel):
 
 if __name__ == "__main__":
     o = Order.create(
-        side=Side.BUY, price=50, quantity=100, owner="alice", order_id="x1", sequence_number=1
+        side=Side.BUY, price=50, quantity=100, owner_id=101, order_id="x1", sequence_number=1
     )
     assert o.remaining == o.quantity == 100
     o.remaining = 75
     assert o.remaining == 75
 
-    for frozen_field in ("side", "price", "quantity", "owner", "order_id", "sequence_number"):
+    for frozen_field in ("side", "price", "quantity", "owner_id", "order_id", "sequence_number"):
         try:
             setattr(o, frozen_field, None)
             raise AssertionError(f"{frozen_field} should have raised")

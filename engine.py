@@ -1,26 +1,45 @@
+import threading
+
 from book import OrderBook
-from order import Order, OrderRequest, Side, Trade
+from order import CancelledOrder, Order, OrderRequest, Side, Trade
 
 
 class MatchingEngine:
     def __init__(self) -> None:
         self._next_seq = 0
         self._book = OrderBook()
+        # serializes submit/cancel/snapshot — prevents cancel-while-matching race
+        self._lock = threading.Lock()
 
     def submit_order(self, request: OrderRequest) -> list[Trade]:
-        order = self._create_order(request)
-        trades = self._match(order)
-        if order.remaining > 0:
-            self._book.add(order)
-        return trades
+        with self._lock:
+            order = self._create_order(request)
+            trades, expired = self._match(order)
+            if not expired and order.remaining > 0:
+                self._book.add(order)
+            return trades
 
-    def cancel_order(self, order_id: str) -> Order | None:
-        return self._book.cancel(order_id)
+    def cancel_order(self, order_id: str, owner_id: int) -> CancelledOrder | None:
+        with self._lock:
+            order = self._book._index.get(order_id)
+            if order is None or order.owner_id != owner_id:
+                return None
+            self._book.cancel(order_id)
+            return CancelledOrder(
+                order_id=order.order_id,
+                side=order.side,
+                price=order.price,
+                quantity=order.quantity,
+                remaining=order.remaining,
+                owner_id=order.owner_id,
+                sequence_number=order.sequence_number,
+            )
 
     def snapshot(self) -> dict:
-        return self._book.snapshot()
+        with self._lock:
+            return self._book.snapshot()
 
-    def _match(self, incoming: Order) -> list[Trade]:
+    def _match(self, incoming: Order) -> tuple[list[Trade], bool]:
         trades: list[Trade] = []
         opposite = Side.SELL if incoming.side == Side.BUY else Side.BUY
 
@@ -34,8 +53,8 @@ class MatchingEngine:
             for resting in list(self._book.level(opposite, price)):
                 if incoming.remaining == 0:
                     break
-                if resting.owner == incoming.owner:
-                    continue
+                if resting.owner_id == incoming.owner_id:
+                    return trades, True  # self-trade: expire remainder, keep prior fills
                 filled = min(incoming.remaining, resting.remaining)
                 incoming.remaining -= filled
                 resting.remaining -= filled
@@ -50,7 +69,7 @@ class MatchingEngine:
                 if resting.remaining == 0:
                     self._book.remove(resting)
 
-        return trades
+        return trades, False
 
     def _create_order(self, request: OrderRequest) -> Order:
         self._next_seq += 1
@@ -59,7 +78,7 @@ class MatchingEngine:
             side=request.side,
             price=request.price,
             quantity=request.quantity,
-            owner=request.owner,
+            owner_id=request.owner_id,
             sequence_number=seq,
             order_id=f"order-{seq}",
         )
