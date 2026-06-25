@@ -1,5 +1,3 @@
-import threading
-
 from book import OrderBook
 from order import CancelledOrder, Order, OrderRequest, Side, Trade
 
@@ -8,36 +6,31 @@ class MatchingEngine:
     def __init__(self) -> None:
         self._next_seq = 0
         self._book = OrderBook()
-        # serializes submit/cancel/snapshot — prevents cancel-while-matching race
-        self._lock = threading.Lock()
 
     def submit_order(self, request: OrderRequest) -> list[Trade]:
-        with self._lock:
-            order = self._create_order(request)
-            trades, expired = self._match(order)
-            if not expired and order.remaining > 0:
-                self._book.add(order)
-            return trades
+        order = self._create_order(request)
+        trades, expired = self._match(order)
+        if not expired and order.remaining > 0:
+            self._book.add(order)
+        return trades
 
     def cancel_order(self, order_id: str, owner_id: int) -> CancelledOrder | None:
-        with self._lock:
-            order = self._book.get(order_id)
-            if order is None or order.owner_id != owner_id:
-                return None
-            self._book.cancel(order_id)
-            return CancelledOrder(
-                order_id=order.order_id,
-                side=order.side,
-                price=order.price,
-                quantity=order.quantity,
-                remaining=order.remaining,
-                owner_id=order.owner_id,
-                sequence_number=order.sequence_number,
-            )
+        order = self._book.get(order_id)
+        if order is None or order.owner_id != owner_id:
+            return None
+        self._book.cancel(order_id)
+        return CancelledOrder(
+            order_id=order.order_id,
+            side=order.side,
+            price=order.price,
+            quantity=order.quantity,
+            remaining=order.remaining,
+            owner_id=order.owner_id,
+            sequence_number=order.sequence_number,
+        )
 
     def snapshot(self) -> dict:
-        with self._lock:
-            return self._book.snapshot()
+        return self._book.snapshot()
 
     def _match(self, incoming: Order) -> tuple[list[Trade], bool]:
         trades: list[Trade] = []
