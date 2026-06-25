@@ -5,6 +5,9 @@ from collections import deque
 from order import Order, Side
 
 
+# Price levels: dict[int, deque[Order]] — lookup by price is O(1), prices sorted on demand O(P log P).
+# Cancel via _index is O(1) lookup + O(N) deque removal (N = orders at that level).
+# ponytail: acceptable for a toy engine; production would use a sorted container + linked-list removal.
 class OrderBook:
     def __init__(self) -> None:
         self._bids: dict[int, deque[Order]] = {}
@@ -15,6 +18,8 @@ class OrderBook:
         return self._bids if side == Side.BUY else self._asks
 
     def add(self, order: Order) -> None:
+        if order.order_id in self._index:
+            raise ValueError(f"duplicate order_id: {order.order_id!r}")
         book = self._side_book(order.side)
         if order.price not in book:
             book[order.price] = deque()
@@ -40,6 +45,14 @@ class OrderBook:
 
     def best_ask(self) -> int | None:
         return min(self._asks) if self._asks else None
+
+    def is_crossed(self) -> bool:
+        bid = self.best_bid()
+        ask = self.best_ask()
+        return bid is not None and ask is not None and bid >= ask
+
+    def has_order(self, order_id: str) -> bool:
+        return order_id in self._index
 
     def level(self, side: Side, price: int) -> deque[Order]:
         return self._side_book(side).get(price, deque())
@@ -91,5 +104,18 @@ if __name__ == "__main__":
 
     book.remove(b1)
     assert book.best_bid() is None
+
+    assert book.is_crossed() is False
+    assert book.has_order("3") is True
+    assert book.has_order("99") is False
+
+    dup = make("99", Side.BUY, 50, 5)
+    book2 = OrderBook()
+    book2.add(dup)
+    try:
+        book2.add(dup)
+        raise AssertionError("duplicate should have raised")
+    except ValueError:
+        pass
 
     print("ok")

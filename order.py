@@ -29,6 +29,19 @@ class Trade(BaseModel):
     quantity: int = Field(gt=0)
 
 
+class CancelledOrder(BaseModel):
+    """Immutable snapshot returned by cancel_order — callers cannot mutate engine state."""
+    model_config = ConfigDict(frozen=True)
+
+    order_id: str
+    side: Side
+    price: int = Field(ge=1, le=99)
+    quantity: int = Field(gt=0)
+    remaining: int = Field(ge=0)
+    owner_id: int
+    sequence_number: int
+
+
 class Order(BaseModel):
     model_config = ConfigDict(frozen=False)
 

@@ -1,7 +1,7 @@
 import threading
 
 from book import OrderBook
-from order import Order, OrderRequest, Side, Trade
+from order import CancelledOrder, Order, OrderRequest, Side, Trade
 
 
 class MatchingEngine:
@@ -19,12 +19,21 @@ class MatchingEngine:
                 self._book.add(order)
             return trades
 
-    def cancel_order(self, order_id: str, owner_id: int) -> Order | None:
+    def cancel_order(self, order_id: str, owner_id: int) -> CancelledOrder | None:
         with self._lock:
             order = self._book._index.get(order_id)
             if order is None or order.owner_id != owner_id:
                 return None
-            return self._book.cancel(order_id)
+            self._book.cancel(order_id)
+            return CancelledOrder(
+                order_id=order.order_id,
+                side=order.side,
+                price=order.price,
+                quantity=order.quantity,
+                remaining=order.remaining,
+                owner_id=order.owner_id,
+                sequence_number=order.sequence_number,
+            )
 
     def snapshot(self) -> dict:
         with self._lock:
