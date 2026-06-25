@@ -17,7 +17,7 @@ class OrderRequest(BaseModel):
     side: Side
     price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
-    owner_id: int
+    owner_id: int = Field(gt=0, strict=True)
 
 
 class Trade(BaseModel):
@@ -49,7 +49,7 @@ class Order(BaseModel):
     side: Side
     price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
-    owner_id: int
+    owner_id: int = Field(gt=0, strict=True)
 
     # Engine-assigned — frozen after creation
     order_id: str

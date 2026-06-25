@@ -211,6 +211,18 @@ def test_book_not_crossed_after_normal_submissions() -> None:
     assert not eng._book.is_crossed()
 
 
+def test_owner_id_validation() -> None:
+    # valid
+    OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101)
+
+    for bad in ("101", True, 0, -1):
+        try:
+            OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=bad)  # type: ignore[arg-type]
+            raise AssertionError(f"owner_id={bad!r} should have been rejected")
+        except Exception as e:
+            assert not isinstance(e, AssertionError), str(e)
+
+
 def test_duplicate_order_id_rejected() -> None:
     book = OrderBook()
     o = _order("1", Side.BUY, 50, 5)
@@ -325,6 +337,7 @@ if __name__ == "__main__":
     test_self_trade_partial_fill_then_expire()
     test_cancel_wrong_owner()
     test_book_not_crossed_after_normal_submissions()
+    test_owner_id_validation()
     test_duplicate_order_id_rejected()
     test_cancel_returns_remaining_at_cancel_time()
     test_fill_accounting_invariant()

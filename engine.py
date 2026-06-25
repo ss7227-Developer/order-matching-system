@@ -21,7 +21,7 @@ class MatchingEngine:
 
     def cancel_order(self, order_id: str, owner_id: int) -> CancelledOrder | None:
         with self._lock:
-            order = self._book._index.get(order_id)
+            order = self._book.get(order_id)
             if order is None or order.owner_id != owner_id:
                 return None
             self._book.cancel(order_id)
@@ -50,7 +50,7 @@ class MatchingEngine:
                 break
             if incoming.side == Side.SELL and price < incoming.price:
                 break
-            for resting in list(self._book.level(opposite, price)):
+            for resting in list(self._book._level(opposite, price)):
                 if incoming.remaining == 0:
                     break
                 if resting.owner_id == incoming.owner_id:

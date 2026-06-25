@@ -7,7 +7,8 @@ from order import Order, Side
 
 # Price levels: dict[int, deque[Order]] — lookup by price is O(1), prices sorted on demand O(P log P).
 # Cancel via _index is O(1) lookup + O(N) deque removal (N = orders at that level).
-# ponytail: acceptable for a toy engine; production would use a sorted container + linked-list removal.
+# Acceptable for a toy engine; production would use a sorted container (e.g. SortedDict) and O(1)
+# per-order removal via a doubly-linked structure or order-id-keyed dict.
 class OrderBook:
     def __init__(self) -> None:
         self._bids: dict[int, deque[Order]] = {}
@@ -54,7 +55,10 @@ class OrderBook:
     def has_order(self, order_id: str) -> bool:
         return order_id in self._index
 
-    def level(self, side: Side, price: int) -> deque[Order]:
+    def get(self, order_id: str) -> Order | None:
+        return self._index.get(order_id)
+
+    def _level(self, side: Side, price: int) -> deque[Order]:
         return self._side_book(side).get(price, deque())
 
     def prices(self, side: Side) -> list[int]:
@@ -91,7 +95,7 @@ if __name__ == "__main__":
 
     assert book.best_bid() == 50
     assert book.best_ask() == 55
-    assert list(book.level(Side.BUY, 50)) == [b1, b2]
+    assert list(book._level(Side.BUY, 50)) == [b1, b2]
 
     snap = book.snapshot()
     assert snap["bids"] == [{"price": 50, "quantity": 15}]
@@ -100,7 +104,7 @@ if __name__ == "__main__":
     cancelled = book.cancel("2")
     assert cancelled is b2
     assert book.cancel("2") is None
-    assert book.level(Side.BUY, 50) == deque([b1])
+    assert book._level(Side.BUY, 50) == deque([b1])
 
     book.remove(b1)
     assert book.best_bid() is None
