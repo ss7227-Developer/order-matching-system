@@ -25,7 +25,7 @@ class Trade(BaseModel):
 
     buy_order_id: str
     sell_order_id: str
-    price: int = Field(ge=1)
+    price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
     quantity: int = Field(gt=0)
 
 

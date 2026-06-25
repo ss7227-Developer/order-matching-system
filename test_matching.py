@@ -148,6 +148,16 @@ def test_snapshot_reflects_state() -> None:
     }
 
 
+def test_self_trade_skip_produces_crossed_book() -> None:
+    # self-trade skip: alice's ask@50 skipped, incoming buy@52 rests — crossed book is intentional
+    eng = MatchingEngine()
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="alice"))  # order-1
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=52, quantity=10, owner="alice"))
+    assert trades == []
+    assert eng._book.best_ask() == 50
+    assert eng._book.best_bid() == 52
+
+
 if __name__ == "__main__":
     test_trade_is_immutable()
     test_prices_asks_ascending()
@@ -164,4 +174,5 @@ if __name__ == "__main__":
     test_cancel_nonexistent_returns_none()
     test_cancel_already_filled_returns_none()
     test_snapshot_reflects_state()
+    test_self_trade_skip_produces_crossed_book()
     print("all ok")
