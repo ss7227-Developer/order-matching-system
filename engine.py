@@ -19,10 +19,10 @@ class MatchingEngine:
                 self._book.add(order)
             return trades
 
-    def cancel_order(self, order_id: str, owner: str) -> Order | None:
+    def cancel_order(self, order_id: str, owner_id: int) -> Order | None:
         with self._lock:
             order = self._book._index.get(order_id)
-            if order is None or order.owner != owner:
+            if order is None or order.owner_id != owner_id:
                 return None
             return self._book.cancel(order_id)
 
@@ -44,7 +44,7 @@ class MatchingEngine:
             for resting in list(self._book.level(opposite, price)):
                 if incoming.remaining == 0:
                     break
-                if resting.owner == incoming.owner:
+                if resting.owner_id == incoming.owner_id:
                     return trades, True  # self-trade: expire remainder, keep prior fills
                 filled = min(incoming.remaining, resting.remaining)
                 incoming.remaining -= filled
@@ -69,7 +69,7 @@ class MatchingEngine:
             side=request.side,
             price=request.price,
             quantity=request.quantity,
-            owner=request.owner,
+            owner_id=request.owner_id,
             sequence_number=seq,
             order_id=f"order-{seq}",
         )

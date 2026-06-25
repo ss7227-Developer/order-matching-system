@@ -65,7 +65,7 @@ class OrderBook:
 if __name__ == "__main__":
     def make(order_id: str, side: Side, price: int, qty: int) -> Order:
         return Order.create(
-            side=side, price=price, quantity=qty, owner="t",
+            side=side, price=price, quantity=qty, owner_id=1,
             order_id=order_id, sequence_number=int(order_id),
         )
 

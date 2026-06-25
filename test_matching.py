@@ -5,7 +5,7 @@ from order import Order, OrderRequest, Side, Trade
 
 def _order(oid: str, side: Side, price: int, qty: int) -> Order:
     return Order.create(
-        side=side, price=price, quantity=qty, owner="t",
+        side=side, price=price, quantity=qty, owner_id=1,
         order_id=oid, sequence_number=int(oid),
     )
 
@@ -36,15 +36,15 @@ def test_prices_bids_descending() -> None:
 
 def test_no_cross_rests_in_book() -> None:
     eng = MatchingEngine()
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))
     assert trades == []
     assert eng._book.best_bid() == 50
 
 
 def test_full_fill() -> None:
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=202))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))
     assert len(trades) == 1
     assert trades[0].price == 50
     assert trades[0].quantity == 10
@@ -55,8 +55,8 @@ def test_full_fill() -> None:
 def test_partial_fill_incoming_rests() -> None:
     # incoming buy 15, resting sell 10 → 10 filled, 5 rests as bid
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=15, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=202))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=15, owner_id=101))
     assert len(trades) == 1
     assert trades[0].quantity == 10
     assert eng._book.best_bid() == 50
@@ -65,8 +65,8 @@ def test_partial_fill_incoming_rests() -> None:
 def test_partial_fill_resting_stays() -> None:
     # incoming buy 5, resting sell 10 → 5 filled, resting has 5 remaining
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=5, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=202))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=5, owner_id=101))
     assert len(trades) == 1
     assert trades[0].quantity == 5
     assert eng._book.best_ask() == 50
@@ -75,9 +75,9 @@ def test_partial_fill_resting_stays() -> None:
 def test_multi_level_fill() -> None:
     # buy 20 @51 crosses two ask levels: 10@50, 10@51
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))
-    eng.submit_order(OrderRequest(side=Side.SELL, price=51, quantity=10, owner="carol"))
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=51, quantity=20, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=202))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=51, quantity=10, owner_id=303))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=51, quantity=20, owner_id=101))
     assert len(trades) == 2
     assert trades[0].price == 50   # best ask filled first
     assert trades[1].price == 51
@@ -86,8 +86,8 @@ def test_multi_level_fill() -> None:
 def test_self_trade_skipped() -> None:
     # same owner: incoming buy expires on own ask — no crossed book, no resting bid
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="alice"))
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))
     assert trades == []
     assert eng._book.best_bid() is None  # expired, not rested
     assert eng._book.best_ask() == 50
@@ -96,9 +96,9 @@ def test_self_trade_skipped() -> None:
 def test_fifo_within_level() -> None:
     # two sells at same price; first arrival (order-1) fills before second (order-2)
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=5, owner="bob"))    # order-1
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=5, owner="carol"))  # order-2
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=5, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=5, owner_id=202))    # order-1
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=5, owner_id=303))  # order-2
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=5, owner_id=101))
     assert len(trades) == 1
     assert trades[0].sell_order_id == "order-1"
 
@@ -106,8 +106,8 @@ def test_fifo_within_level() -> None:
 def test_sell_aggressor_full_fill() -> None:
     # resting BUY@50, incoming SELL@50 → one trade, correct buy/sell ids
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))   # order-1
-    trades = eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))
+    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))   # order-1
+    trades = eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=202))
     assert len(trades) == 1
     assert trades[0].price == 50
     assert trades[0].quantity == 10
@@ -119,8 +119,8 @@ def test_sell_aggressor_full_fill() -> None:
 
 def test_cancel_removes_resting_order() -> None:
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))  # order-1
-    cancelled = eng.cancel_order("order-1", "alice")
+    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))  # order-1
+    cancelled = eng.cancel_order("order-1", 101)
     assert cancelled is not None
     assert cancelled.order_id == "order-1"
     assert eng._book.best_bid() is None
@@ -128,20 +128,20 @@ def test_cancel_removes_resting_order() -> None:
 
 def test_cancel_nonexistent_returns_none() -> None:
     eng = MatchingEngine()
-    assert eng.cancel_order("order-999", "alice") is None
+    assert eng.cancel_order("order-999", 101) is None
 
 
 def test_cancel_already_filled_returns_none() -> None:
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))   # order-1
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="bob"))    # order-2, fills order-1
-    assert eng.cancel_order("order-1", "alice") is None
+    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))   # order-1
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=202))    # order-2, fills order-1
+    assert eng.cancel_order("order-1", 101) is None
 
 
 def test_snapshot_reflects_state() -> None:
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=48, quantity=5, owner="alice"))
-    eng.submit_order(OrderRequest(side=Side.SELL, price=52, quantity=3, owner="bob"))
+    eng.submit_order(OrderRequest(side=Side.BUY, price=48, quantity=5, owner_id=101))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=52, quantity=3, owner_id=202))
     assert eng.snapshot() == {
         "bids": [{"price": 48, "quantity": 5}],
         "asks": [{"price": 52, "quantity": 3}],
@@ -151,8 +151,8 @@ def test_snapshot_reflects_state() -> None:
 def test_self_trade_no_crossed_book() -> None:
     # self-trade expire: alice's ask@50, incoming buy@52 expires — book stays uncrossed
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="alice"))  # order-1
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=52, quantity=10, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))  # order-1
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=52, quantity=10, owner_id=101))
     assert trades == []
     assert eng._book.best_ask() == 50
     assert eng._book.best_bid() is None  # expired, not rested
@@ -161,8 +161,8 @@ def test_self_trade_no_crossed_book() -> None:
 def test_self_trade_buy_crossing_own_ask() -> None:
     # BUY crosses own resting ASK → expire, no rest, book has only the ASK
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="alice"))
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner_id=101))
     assert trades == []
     assert eng._book.best_ask() == 50
     assert eng._book.best_bid() is None
@@ -171,8 +171,8 @@ def test_self_trade_buy_crossing_own_ask() -> None:
 def test_self_trade_sell_crossing_own_bid() -> None:
     # SELL crosses own resting BID → expire, no rest, book has only the BID
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner="alice"))
-    trades = eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner_id=101))
+    trades = eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=10, owner_id=101))
     assert trades == []
     assert eng._book.best_bid() == 55
     assert eng._book.best_ask() is None
@@ -181,9 +181,9 @@ def test_self_trade_sell_crossing_own_bid() -> None:
 def test_self_trade_partial_fill_then_expire() -> None:
     # BUY fills against bob@50, then hits alice's ask@51 → stop and expire remainder
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=5, owner="bob"))    # order-1
-    eng.submit_order(OrderRequest(side=Side.SELL, price=51, quantity=5, owner="alice"))  # order-2 (own ask)
-    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner="alice"))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=50, quantity=5, owner_id=202))    # order-1
+    eng.submit_order(OrderRequest(side=Side.SELL, price=51, quantity=5, owner_id=101))  # order-2 (own ask)
+    trades = eng.submit_order(OrderRequest(side=Side.BUY, price=55, quantity=10, owner_id=101))
     assert len(trades) == 1          # filled against bob only
     assert trades[0].quantity == 5
     assert trades[0].price == 50
@@ -193,15 +193,15 @@ def test_self_trade_partial_fill_then_expire() -> None:
 
 def test_cancel_wrong_owner() -> None:
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner="alice"))  # order-1
-    assert eng.cancel_order("order-1", "bob") is None  # wrong owner
+    eng.submit_order(OrderRequest(side=Side.BUY, price=50, quantity=10, owner_id=101))  # order-1
+    assert eng.cancel_order("order-1", 202) is None  # wrong owner
     assert eng._book.best_bid() == 50  # still in book
 
 
 def test_book_not_crossed_after_normal_submissions() -> None:
     eng = MatchingEngine()
-    eng.submit_order(OrderRequest(side=Side.BUY, price=48, quantity=5, owner="alice"))
-    eng.submit_order(OrderRequest(side=Side.SELL, price=52, quantity=5, owner="bob"))
+    eng.submit_order(OrderRequest(side=Side.BUY, price=48, quantity=5, owner_id=101))
+    eng.submit_order(OrderRequest(side=Side.SELL, price=52, quantity=5, owner_id=202))
     bid = eng._book.best_bid()
     ask = eng._book.best_ask()
     assert bid is None or ask is None or bid < ask
