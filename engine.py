@@ -1,5 +1,6 @@
 from book import OrderBook
-from order import CancelledOrder, Order, OrderRequest, Side, Trade
+from order import CancelledOrder, Order, OrderRequest, Side, Trade, SubmitResult
+
 
 
 class MatchingEngine:
@@ -7,12 +8,16 @@ class MatchingEngine:
         self._next_seq = 0
         self._book = OrderBook()
 
-    def submit_order(self, request: OrderRequest) -> list[Trade]:
+    def submit_order(self, request: OrderRequest) -> SubmitResult:
         order = self._create_order(request)
         trades = self._match(order)
         if order.remaining > 0:
             self._book.add(order)
-        return trades
+        return SubmitResult(
+            order_id=order.order_id,
+            trades=trades,
+            remaining=order.remaining,
+        )
 
     def cancel_order(self, order_id: str, owner_id: int) -> CancelledOrder | None:
         order = self._book.get(order_id)

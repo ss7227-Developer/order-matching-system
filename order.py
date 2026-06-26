@@ -94,6 +94,13 @@ class Order(BaseModel):
             remaining=quantity,
         )
 
+class SubmitResult(BaseModel):
+    model_config = ConfigDict(frozen=True)
+
+    order_id: str
+    trades: list[Trade]
+    remaining: int = Field(ge=0)
+
 
 if __name__ == "__main__":
     o = Order.create(
