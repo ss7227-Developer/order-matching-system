@@ -1,9 +1,12 @@
 from __future__ import annotations
 
 from enum import Enum
-from typing import ClassVar
+from typing import Annotated, ClassVar
 
 from pydantic import BaseModel, ConfigDict, Field
+
+Price = Annotated[int, Field(ge=1, le=99)]   # tick range: 1–99 for this binary-outcome instrument
+Quantity = Annotated[int, Field(gt=0)]
 
 
 class Side(str, Enum):
@@ -14,9 +17,10 @@ class Side(str, Enum):
 class OrderRequest(BaseModel):
     model_config = ConfigDict(frozen=True)
 
+    client_order_id: str = Field(min_length=1)
     side: Side
-    price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
-    quantity: int = Field(gt=0)
+    price: Price
+    quantity: Quantity
     owner_id: int = Field(gt=0, strict=True)
 
 
@@ -25,8 +29,8 @@ class Trade(BaseModel):
 
     buy_order_id: str
     sell_order_id: str
-    price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
-    quantity: int = Field(gt=0)
+    price: Price
+    quantity: Quantity
 
 
 class CancelledOrder(BaseModel):
@@ -35,8 +39,8 @@ class CancelledOrder(BaseModel):
 
     order_id: str
     side: Side
-    price: int = Field(ge=1, le=99)
-    quantity: int = Field(gt=0)
+    price: Price
+    quantity: Quantity
     remaining: int = Field(ge=0)
     owner_id: int
     sequence_number: int
@@ -47,8 +51,8 @@ class Order(BaseModel):
 
     # Client-supplied — frozen after creation
     side: Side
-    price: int = Field(ge=1, le=99)  # tick range: 1–99 for this binary-outcome instrument
-    quantity: int = Field(gt=0)
+    price: Price
+    quantity: Quantity
     owner_id: int = Field(gt=0, strict=True)
 
     # Engine-assigned — frozen after creation

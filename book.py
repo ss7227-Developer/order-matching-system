@@ -50,18 +50,18 @@ class OrderBook:
     def prices(self, side: Side) -> list[int]:
         return sorted(self._side_book(side), reverse=(side == Side.BUY))
 
-    def snapshot(self) -> dict[str, list[dict[str, int]]]:
-        def aggregate(book: dict[int, deque[Order]], reverse: bool) -> list[dict[str, int]]:
-            levels = []
+    def snapshot(self) -> dict[str, list[dict]]:
+        def expand(book: dict[int, deque[Order]], reverse: bool) -> list[dict]:
+            entries = []
             for price in sorted(book, reverse=reverse):
-                qty = sum(o.remaining for o in book[price])
-                if qty:
-                    levels.append({"price": price, "quantity": qty})
-            return levels
+                for o in book[price]:
+                    if o.remaining:
+                        entries.append({"order_id": o.order_id, "owner_id": o.owner_id, "price": o.price, "quantity": o.remaining})
+            return entries
 
         return {
-            "bids": aggregate(self._bids, reverse=True),
-            "asks": aggregate(self._asks, reverse=False),
+            "bids": expand(self._bids, reverse=True),
+            "asks": expand(self._asks, reverse=False),
         }
 
 
@@ -82,8 +82,11 @@ if __name__ == "__main__":
     assert list(book._level(Side.BUY, 50)) == [b1, b2]
 
     snap = book.snapshot()
-    assert snap["bids"] == [{"price": 50, "quantity": 15}]
-    assert snap["asks"] == [{"price": 55, "quantity": 8}]
+    assert snap["bids"] == [
+        {"order_id": "1", "owner_id": 1, "price": 50, "quantity": 10},
+        {"order_id": "2", "owner_id": 1, "price": 50, "quantity": 5},
+    ]
+    assert snap["asks"] == [{"order_id": "3", "owner_id": 1, "price": 55, "quantity": 8}]
 
     cancelled = book.cancel("2")
     assert cancelled is b2
