@@ -1,51 +1,115 @@
-# Binary Outcome Order-Matching Engine
+# Binary-Outcome Order Matching Engine
 
-A toy, in-memory limit-order matching engine with a REST API for a binary outcome market: submit/cancel limit orders, match by price-time priority, partial fills, and an order-book snapshot.
-
-*A more detailed write-up of my design tradeoffs and decisions is in [`DESIGN_NOTES.pdf`](./DESIGN_NOTES.pdf) for anyone who wants the deeper reasoning. This README stands on its own.*
+A limit-order matching engine with a REST API for a single binary-outcome market — a YES/NO
+contract priced in integer cents (`1`–`99`). Orders match on **price-time priority**; any
+unfilled remainder rests on the book. The matching core has no knowledge of HTTP and can be
+driven entirely in-process (the test suite does exactly that).
 
 ---
 
-## What I built
+## What it does
 
-- **Limit orders only** — buy/sell at a price or better, resting on the book if unfilled.
-- **Price-time priority matching** — best price first; FIFO is the tiebreaker within a price level.
-- **Partial fills**, tracked precisely: an order's `remaining` quantity is separate from its original `quantity`, and is the only field that mutates after creation.
-- **Cancel**, by order id, scoped to the owner who placed it.
-- **Self-trade prevention** — if a new order would match against the same owner's resting order, I cancel the resting order rather than letting both sides rest at a crossing price.
-- **An order-book snapshot** — bids and asks aggregated by price level.
-- **Idempotent submission** — a client-generated `client_order_id` is cached server-side so a retried request returns the original result instead of double-placing an order.
-- **Market resolution** — cancels all resting orders and locks the book against further trading.
+- Accepts limit orders (`BUY`/`SELL`, price `1`–`99`, positive integer quantity) over HTTP.
+- Matches an incoming order against the resting book **best price first, FIFO within a price level**.
+- Rests any unfilled remainder and returns the trades produced plus the remaining quantity.
+- Cancels resting orders by id (owner-scoped).
+- Serves a live order-book snapshot.
 
-Prices are integer cents, 1-99 (a binary contract's price is a probability, and it can't be 0 or 100 while still tradeable).
+It handles the four required edge cases — self-trades, partial-fill accounting,
+cancel-while-matching, and input validation — plus two deliberate extras: **idempotent submit**
+and **market resolution**.
+
+---
+
+## Architecture
+
+Four layers, one job each, dependencies pointing one direction
+(`transport → engine → book → domain`):
+
+| File | Responsibility |
+|------|----------------|
+| `order.py` | Domain types + validation (Pydantic v2). The only definition of what an order *is*. |
+| `book.py` | Order-book data structure: price levels, FIFO queues, an id index. No matching logic. |
+| `engine.py` | Matching algorithm, idempotency, resolution, concurrency control. **The single writer.** |
+| `app.py` | HTTP transport. The only module that imports FastAPI. |
+| `exceptions.py` | Engine error types. |
+
+`app.py` is the only file that knows about HTTP; `engine.py` is the only file that mutates state.
+That separation is why the entire engine is testable without starting a web server.
+
+---
+
+## API
+
+| Method | Path | Returns |
+|--------|------|---------|
+| `POST` | `/orders` | `201` with `{order_id, trades, remaining}` |
+| `DELETE` | `/orders/{order_id}?owner_id=…` | `200` with the cancelled order, or `404` |
+| `GET` | `/orderbook` | snapshot of resting bids and asks |
+
+Market resolution (`resolve_market`) is modelled at the engine layer and tested directly. It is a
+privileged operational action, not a public participant endpoint in this iteration — see
+**Future work**.
+
+---
+
+## Running it
+
+```bash
+pip install fastapi "uvicorn[standard]" "pydantic>=2"
+uvicorn app:app --reload
+```
+
+Submit an order:
+
+```bash
+curl -X POST localhost:8000/orders \
+  -H 'content-type: application/json' \
+  -d '{"client_order_id":"abc","side":"SELL","price":50,"quantity":10,"owner_id":202}'
+```
+
+---
+
+## Tests
+
+```bash
+python test_matching.py     # runs the full suite, prints "all ok"
+# or
+pytest test_matching.py
+```
+
+37 tests covering matching (full / partial / multi-level), price-then-time priority, FIFO across
+cancellation, self-trade prevention in every queue position, cancellation and owner-scoping,
+input validation, idempotency, market resolution, immutability of returned snapshots, and an
+**8-thread × 250-submit concurrency stress test** that fails without the engine lock.
+
+---
 
 ## How I built it
 
-Four layers, with one rule enforced throughout: **the matching engine has no knowledge that HTTP exists.**
+I used Claude as an implementation assistant. The architectural decisions, tradeoffs, and final design choices were mine. 
+I built one layer at a time, and for the two genuinely hard cases I deliberately shipped the *wrong* version to myself first: skip-and-continue self-trade
+prevention, and a lock-less engine. I then reproduced the resulting crossed book and the
+threadpool race with live probes and fixed both. That debugging is the part a one-shot prompt
+doesn't produce, and the accompanying AI-usage export shows it directly.
 
-```
-app.py     FastAPI + Pydantic - the only file that imports FastAPI. Thin translation only.
-engine.py  MatchingEngine - the matching loop, self-trade policy, and the lock that
-           serializes every mutation.
-book.py    OrderBook - bids/asks as price -> FIFO queue, plus an id index for cancel.
-order.py   Domain types: Order, OrderRequest, and the Price/Quantity constraints.
-```
-
-A few decisions I want to call out directly, because they're the ones that actually mattered:
-
-- **Time priority uses a monotonic counter, not a wall-clock timestamp.** A clock can produce ties at the same instant, and can be adjusted backwards by NTP - either of which would break FIFO ordering silently. A counter that only increments can't do either.
-- **The matching loop has to run one order at a time, but I initially got the *enforcement* of that wrong.** I first assumed the engine was single-threaded "by nature" and removed a lock I'd added - but FastAPI actually runs request handlers in a threadpool, so `submit` and `cancel` can land on different threads at the same time. I reproduced the resulting race as real exceptions, then put a lock back around every state-mutating method so the engine is serialized in code, not by assumption.
-- **My first self-trade prevention policy was wrong, and I caught it by testing, not by reading the code.** A "skip and continue" approach left a crossed book (a bid priced above an ask) in a case with no other resting order to fall back on. The fix was to cancel the resting order outright rather than skip past it.
-- **The crossed-book safety check uses `raise`, not `assert`**, since `assert` is silently stripped out when Python runs with `-O`.
-
-I tested the engine directly - no HTTP involved - with 37 tests covering self-trades, partial fills, FIFO ordering, cancellation, validation, idempotency, and a concurrency stress test, all passing.
-
-## What I'd do with more time
-
-1. **Persistence.** Everything is in-memory right now and disappears on restart. I'd add an append-only event log of every accepted order and cancel, so the book could be rebuilt deterministically by replaying it.
-2. **A faster cancel for deep order books.** Cancelling currently scans the price level it's removing from, which is fine at the depth a toy sees but becomes the bottleneck if many orders stack at one price. I scoped out a doubly-linked-list-per-level redesign that makes cancel O(1) instead - I have the design worked out, but didn't take it on the night before submission, since it touches five different parts of the book and the risk of leaving a dangling reference wasn't one I wanted to carry untested into a deadline.
-3. **Real authentication.** Ownership is currently asserted with a plain `owner_id` query parameter, which is a stand-in, not security.
+The full rationale — every decision, the alternative I weighed against it, and what each one
+costs — is in [`DESIGN.md`](./DESIGN.md).
 
 ---
 
-*Built with Claude as an implementation assistant for typing and pressure-testing code against decisions I'd already made - not as a designer. The accompanying AI-tool export reflects that process.*
+## What I'd do with more time
+
+1. **Bound the idempotency cache** (TTL or LRU). It grows unbounded today — fine for an exercise,
+   a leak in production.
+2. **Map engine exceptions to HTTP status codes.** `MarketResolvedError` and `BookInvariantError`
+   currently surface as `500`; they should be `409` and a `500`-with-alert respectively.
+3. **Swap each price level's `deque` for an intrusive doubly-linked list** so cancellation is true
+   `O(1)` instead of `O(k)` in level depth.
+4. **Expose resolution behind an authenticated admin endpoint**, and replace the `owner_id`
+   query-param stand-in with real authentication.
+5. **Add `GET /orders/{order_id}`** to query a single order's live state.
+6. **Model the binary market as a dual YES/NO book** with cross-side matching, rather than one
+   single-sided book.
+7. **Scale by sharding per instrument** — one single-writer engine per contract — *not* by adding
+   threads inside a book.
