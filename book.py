@@ -44,8 +44,11 @@ class OrderBook:
     def get(self, order_id: str) -> Order | None:
         return self._index.get(order_id)
 
-    def _level(self, side: Side, price: int) -> deque[Order]:
+    def level(self, side: Side, price: int) -> deque[Order]:
         return self._side_book(side).get(price, deque())
+
+    def all_orders(self) -> list[Order]:
+        return list(self._index.values())
 
     def prices(self, side: Side) -> list[int]:
         return sorted(self._side_book(side), reverse=(side == Side.BUY))
@@ -79,7 +82,7 @@ if __name__ == "__main__":
 
     book.add(b1); book.add(b2); book.add(a1)
 
-    assert list(book._level(Side.BUY, 50)) == [b1, b2]
+    assert list(book.level(Side.BUY, 50)) == [b1, b2]
 
     snap = book.snapshot()
     assert snap["bids"] == [
@@ -91,7 +94,7 @@ if __name__ == "__main__":
     cancelled = book.cancel("2")
     assert cancelled is b2
     assert book.cancel("2") is None
-    assert book._level(Side.BUY, 50) == deque([b1])
+    assert book.level(Side.BUY, 50) == deque([b1])
 
     book.remove(b1)
 

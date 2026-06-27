@@ -1,6 +1,7 @@
 import threading
 
 from book import OrderBook
+from exceptions import BookInvariantError, MarketResolvedError
 from order import CancelledOrder, Order, OrderRequest, Side, Trade, SubmitResult
 
 
@@ -9,7 +10,7 @@ class MatchingEngine:
         self._next_seq = 0
         self._book = OrderBook()
         self._lock = threading.RLock()
-        # ponytail: unbounded cache; production would evict entries older than ~24 h or use an LRU
+        # unbounded cache; production would evict entries older than ~24 h or use an LRU
         self._submit_cache: dict[str, SubmitResult] = {}
         self._resolved: bool = False
         self._outcome: str | None = None
@@ -17,7 +18,7 @@ class MatchingEngine:
     def submit_order(self, request: OrderRequest) -> SubmitResult:
         with self._lock:
             if self._resolved:
-                raise RuntimeError(f"market already resolved: {self._outcome}")
+                raise MarketResolvedError(f"market already resolved: {self._outcome}")
             cached = self._submit_cache.get(request.client_order_id)
             if cached is not None:
                 return cached
@@ -28,7 +29,7 @@ class MatchingEngine:
             bids = self._book.prices(Side.BUY)
             asks = self._book.prices(Side.SELL)
             if bids and asks and bids[0] >= asks[0]:
-                raise RuntimeError(f"book crossed: best bid {bids[0]} >= best ask {asks[0]}")
+                raise BookInvariantError(f"book crossed: best bid {bids[0]} >= best ask {asks[0]}")
             result = SubmitResult(
                 order_id=order.order_id,
                 trades=trades,
@@ -55,7 +56,7 @@ class MatchingEngine:
 
     def resolve_market(self, outcome: str) -> dict:
         with self._lock:
-            all_orders = list(self._book._index.values())
+            all_orders = self._book.all_orders()
             for order in all_orders:
                 self._book.cancel(order.order_id)
             self._resolved = True
@@ -81,7 +82,7 @@ class MatchingEngine:
                 break
             if incoming.side == Side.SELL and price < incoming.price:
                 break
-            for resting in list(self._book._level(opposite, price)):
+            for resting in list(self._book.level(opposite, price)):
                 if incoming.remaining == 0:
                     break
                 if resting.owner_id == incoming.owner_id:

@@ -3,6 +3,7 @@ import uuid
 
 from book import OrderBook
 from engine import MatchingEngine
+from exceptions import MarketResolvedError
 from order import CancelledOrder, Order, OrderRequest, Side, Trade
 
 
@@ -362,7 +363,7 @@ def test_market_resolution_cancels_all_orders() -> None:
     try:
         eng.submit_order(OrderRequest(client_order_id="r4", side=Side.BUY, price=50, quantity=1, owner_id=101))
         raise AssertionError("should have raised after resolution")
-    except RuntimeError as e:
+    except MarketResolvedError as e:
         assert "resolved" in str(e).lower()
 
 
